@@ -2,7 +2,7 @@ services:
 
   # Kafka in KRaft mode — no Zookeeper, saves ~256MB on t2.small
   kafka:
-    image: bitnami/kafka:3.7
+    image: bitnami/kafka:latest
     environment:
       KAFKA_CFG_NODE_ID: 0
       KAFKA_CFG_PROCESS_ROLES: controller,broker

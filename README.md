@@ -18,43 +18,7 @@ It does this by treating every vehicle ping as a stream event, building stateful
 
 ## Architecture
 
-> *See `architecture.png` for the full pipeline diagram.*
-
-The pipeline runs in four layers:
-
-```
-STB API (info.stbsa.ro)
-    │  20s poll · line 381 vehicles endpoint
-    ▼
-Python poller  ──►  Kafka topic: stb-vehicles
-                         │
-                         ▼
-          ┌──────────────────────────────┐
-          │  Spark Structured Streaming  │
-          │  1. Parse + filter           │
-          │     · Line 381 only          │
-          │     · Corridor bounding box  │
-          │  2. Watermark + window       │
-          │     · 2 min late tolerance   │
-          │     · 5 min rolling window   │
-          │  3. Sessionize               │
-          │     · Per-vehicle run state  │
-          │     · Deviation from baseline│
-          └──────────────────────────────┘
-                         │
-          ┌──────────────┼──────────────┐
-          ▼              ▼              ▼
-       Bronze          Silver          Gold
-    Raw pings      Sessions +      Baseline +
-                   deviation       ETA signal
-                         │
-          ┌──────────────┼──────────────┐
-          ▼              ▼              ▼
-       Live ETA      Delay          Baseline
-       + confidence  heatmap        trend
-          └──────────────────────────────┘
-               Streamlit · 30s refresh
-```
+![Architecture](Architecture.png)
 
 ---
 

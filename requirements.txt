@@ -1,0 +1,19 @@
+# Ingestion
+requests
+kafka-python
+
+# Dashboard
+streamlit>=1.37.0
+plotly
+pydeck
+pandas
+pyarrow
+
+# Databricks (SQL queries from dashboard to Gold table)
+databricks-sql-connector
+
+# AWS
+boto3
+
+# Utilities
+python-dotenv

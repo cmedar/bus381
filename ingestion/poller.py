@@ -10,6 +10,7 @@ from config import (
     CORRIDOR_BBOX, POLL_INTERVAL_SECONDS,
     KAFKA_TOPIC, MOBI_BUS_DATA_URL,
 )
+from stops_381 import nearest_stop
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -65,18 +66,25 @@ def main():
                     if source_ts else ingested_at
                 )
 
+                stop_seq, stop_id, stop_name = nearest_stop(lat, lon)
+
                 record = {
-                    "vehicle_id":    str(inner_veh.get("id", "")),
-                    "license_plate": inner_veh.get("licensePlate", ""),
-                    "latitude":      lat,
-                    "longitude":     lon,
-                    "line_id":       LINE_ID,
-                    "direction_id":  int(trip.get("directionId", 0)),
+                    "vehicle_id":      str(inner_veh.get("id", "")),
+                    "license_plate":   inner_veh.get("licensePlate", ""),
+                    "latitude":        lat,
+                    "longitude":       lon,
+                    "line_id":         LINE_ID,
+                    "direction_id":    int(trip.get("directionId", 0)),
                     "passenger_count": None,
-                    "ingested_at":   ingested_at,
-                    "event_time":    event_time,
+                    "nearest_stop_seq":  stop_seq,
+                    "nearest_stop_id":   stop_id,
+                    "nearest_stop_name": stop_name,
+                    "ingested_at":     ingested_at,
+                    "event_time":      event_time,
                 }
                 producer.send(KAFKA_TOPIC, value=record)
+                log.info("  %s  near %-35s  (seq %d)  %.5f,%.5f",
+                         inner_veh.get("licensePlate", "?"), stop_name, stop_seq, lat, lon)
                 published += 1
 
             producer.flush()

@@ -18,8 +18,16 @@ log = logging.getLogger(__name__)
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
 
 
+_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "application/json, */*",
+    "Referer": "https://maps.mo-bi.ro/",
+    "Origin": "https://maps.mo-bi.ro",
+}
+
+
 def fetch_vehicles() -> list[dict]:
-    resp = requests.get(MOBI_BUS_DATA_URL, timeout=15)
+    resp = requests.get(MOBI_BUS_DATA_URL, headers=_HEADERS, timeout=15)
     resp.raise_for_status()
     return resp.json()
 

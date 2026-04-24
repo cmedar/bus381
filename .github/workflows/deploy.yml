@@ -33,7 +33,6 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script_stop: true
-          envs: STB_API_KEY
           script: |
             if ! command -v docker &> /dev/null; then
               sudo apt-get update
@@ -56,12 +55,8 @@ jobs:
 
             sudo docker system prune -af
 
-            sudo --preserve-env=STB_API_KEY \
-              docker compose up -d --build
+            docker compose up -d --build
             echo "Deployment complete."
-        env:
-          STB_API_KEY: ${{ secrets.STB_API_KEY }}
-
       # - name: Sync Databricks Repo to main
       #   (disabled until Databricks repo is configured)
 

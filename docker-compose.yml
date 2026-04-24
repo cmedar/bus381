@@ -23,7 +23,6 @@ services:
       - kafka
     environment:
       - KAFKA_BOOTSTRAP=kafka:9092
-      - STB_API_KEY=${STB_API_KEY}
     restart: unless-stopped
 
   # Streamlit dashboard — reads Gold table from Databricks

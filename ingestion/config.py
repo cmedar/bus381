@@ -14,7 +14,7 @@ CORRIDOR_BBOX = {
 }
 
 POLL_INTERVAL_SECONDS = 30
-KAFKA_TOPIC = "stb-vehicles"
+KAFKA_TOPIC = "stb-arrivals"
 
 _MOBI_PROXY         = "https://crimson-river-eb3a.ciprian-medar.workers.dev"
 MOBI_BUS_DATA_URL   = f"{_MOBI_PROXY}/api/busData"

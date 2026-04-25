@@ -8,7 +8,7 @@ from kafka import KafkaProducer
 from config import (
     LINE_ID, ROUTE_ID,
     POLL_INTERVAL_SECONDS, KAFKA_TOPIC,
-    MOBI_NEXT_ARR_URL, STOP_PIATA_ROMANA,
+    MOBI_NEXT_ARR_URL, STOP_GH_SINCAI,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -25,7 +25,7 @@ _HEADERS = {
 
 
 def fetch_next_arrivals() -> dict:
-    url = f"{MOBI_NEXT_ARR_URL}/{STOP_PIATA_ROMANA}?_t={int(time.time())}"
+    url = f"{MOBI_NEXT_ARR_URL}/{STOP_GH_SINCAI}?_t={int(time.time())}"
     resp = requests.get(url, headers=_HEADERS, timeout=15)
     resp.raise_for_status()
     return resp.json()
@@ -44,8 +44,8 @@ def main():
         value_serializer=lambda v: json.dumps(v).encode(),
         retries=5,
     )
-    log.info("Poller started — next arrivals for route %s at stop %s (Piata Romana)",
-             LINE_ID, STOP_PIATA_ROMANA)
+    log.info("Poller started — next arrivals for route %s at stop %s (Gh. Sincai)",
+             LINE_ID, STOP_GH_SINCAI)
 
     while True:
         try:
@@ -60,12 +60,12 @@ def main():
                 source       = "timetable" if is_timetable else "live"
                 mins, secs   = divmod(arriving_s, 60)
 
-                log.info("Next 381 at Piata Romana: %dm%02ds (%s) → %s",
+                log.info("Next 381 at Gh. Sincai: %dm%02ds (%s) → %s",
                          mins, secs, source, direction)
 
                 record = {
-                    "stop_id":             str(STOP_PIATA_ROMANA),
-                    "stop_name":           data.get("name", "Piata Romana"),
+                    "stop_id":             str(STOP_GH_SINCAI),
+                    "stop_name":           data.get("name", "Gh. Sincai"),
                     "line_id":             LINE_ID,
                     "route_id":            ROUTE_ID,
                     "arriving_in_seconds": arriving_s,
@@ -76,7 +76,7 @@ def main():
                 producer.send(KAFKA_TOPIC, value=record)
                 producer.flush()
             else:
-                log.info("No 381 arrival data at Piata Romana")
+                log.info("No 381 arrival data at Gh. Sincai")
 
         except requests.HTTPError as e:
             log.error("HTTP error from mo-bi.ro: %s", e)

@@ -19,4 +19,4 @@ KAFKA_TOPIC = "stb-arrivals"
 _MOBI_PROXY         = "https://crimson-river-eb3a.ciprian-medar.workers.dev"
 MOBI_BUS_DATA_URL   = f"{_MOBI_PROXY}/api/busData"
 MOBI_NEXT_ARR_URL   = f"{_MOBI_PROXY}/api/nextArrivals"
-STOP_PIATA_ROMANA   = 6424  # GTFS stop_id for Piata Romana (direction 0 arrival stop)
+STOP_GH_SINCAI      = 3782  # GTFS stop_id for Colegiul Gh. Sincai (~7min before Piata Romana)

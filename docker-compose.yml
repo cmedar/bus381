@@ -39,6 +39,8 @@ services:
   dashboard:
     build: .
     command: streamlit run dashboard/app.py --server.port=8502 --server.address=0.0.0.0
+    ports:
+      - "8502:8502"
     depends_on:
       - kafka
     environment:

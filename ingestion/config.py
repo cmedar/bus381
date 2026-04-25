@@ -16,6 +16,7 @@ CORRIDOR_BBOX = {
 POLL_INTERVAL_SECONDS = 30
 KAFKA_TOPIC = "stb-vehicles"
 
-MOBI_BUS_DATA_URL   = "https://maps.mo-bi.ro/api/busData"
-MOBI_NEXT_ARR_URL   = "https://maps.mo-bi.ro/api/nextArrivals"
+_MOBI_PROXY         = "https://crimson-river-eb3a.ciprian-medar.workers.dev"
+MOBI_BUS_DATA_URL   = f"{_MOBI_PROXY}/api/busData"
+MOBI_NEXT_ARR_URL   = f"{_MOBI_PROXY}/api/nextArrivals"
 STOP_PIATA_ROMANA   = 6424  # GTFS stop_id for Piata Romana (direction 0 arrival stop)

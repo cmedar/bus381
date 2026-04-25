@@ -52,18 +52,28 @@ def main():
             ingested_at = datetime.now(timezone.utc).isoformat()
             published = 0
 
-            for entry in raw:
+            route_buses = [e for e in raw if e.get("vehicle", {}).get("trip", {}).get("routeId") == ROUTE_ID]
+            log.info("Route %s active buses: %d", LINE_ID, len(route_buses))
+            for entry in route_buses:
+                veh  = entry.get("vehicle", {})
+                trip = veh.get("trip", {})
+                pos  = veh.get("position", {})
+                lat  = float(pos.get("latitude", 0))
+                lon  = float(pos.get("longitude", 0))
+                _, _, sname = nearest_stop(lat, lon)
+                plate = veh.get("vehicle", {}).get("licensePlate", "?")
+                log.info("  [dir%s] %s  near %s", trip.get("directionId", "?"), plate, sname)
+
+            for entry in route_buses:
                 veh  = entry.get("vehicle", {})
                 trip = veh.get("trip", {})
 
-                if trip.get("routeId") != ROUTE_ID:
-                    continue
                 if trip.get("directionId") != TARGET_DIRECTION:
                     continue
 
-                pos = veh.get("position", {})
-                lat = float(pos.get("latitude", 0))
-                lon = float(pos.get("longitude", 0))
+                pos  = veh.get("position", {})
+                lat  = float(pos.get("latitude", 0))
+                lon  = float(pos.get("longitude", 0))
                 if not in_corridor(lat, lon):
                     continue
 

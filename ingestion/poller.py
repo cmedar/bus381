@@ -27,7 +27,8 @@ _HEADERS = {
 
 
 def fetch_vehicles() -> list[dict]:
-    resp = requests.get(MOBI_BUS_DATA_URL, headers=_HEADERS, timeout=15)
+    url = f"{MOBI_BUS_DATA_URL}?_t={int(time.time())}"
+    resp = requests.get(url, headers=_HEADERS, timeout=15)
     resp.raise_for_status()
     return resp.json()
 

@@ -16,8 +16,10 @@ st.set_page_config(
 st.markdown("""
 <style>
 [data-testid="stMarkdownContainer"] strong { font-weight: 800; font-size: 1rem; }
+[data-testid="stLayoutWrapper"] { max-width: 600px; }
 [data-testid="stMainMenu"] { display: none; }
 [data-testid="stBaseButton-header"] { display: none; }
+.st-emotion-cache-lvs4k2 { display: none; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -146,7 +148,7 @@ results_dir1 = fetch_all(STOPS_DIR1)
 
 # ── render ─────────────────────────────────────────────────────────────────
 st.title("🚌 Bus 381 · Live Arrivals")
-st.caption(f"Last updated: {now}")
+st.markdown(f"<span style='font-size:2rem'>{now}</span>", unsafe_allow_html=True)
 
 st.subheader("→ Piata Romana")
 render_board(STOPS_DIR0, results_dir0, crossings)

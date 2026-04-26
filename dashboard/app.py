@@ -16,6 +16,8 @@ st.set_page_config(
 st.markdown("""
 <style>
 [data-testid="stMarkdownContainer"] strong { font-weight: 800; font-size: 1rem; }
+[data-testid="stMainMenu"] { display: none; }
+[data-testid="stBaseButton-header"] { display: none; }
 </style>
 """, unsafe_allow_html=True)
 

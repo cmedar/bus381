@@ -100,11 +100,11 @@ st.caption(f"Last updated: {now} · refreshes every {REFRESH_S}s")
 col0, col1 = st.columns(2)
 
 with col0:
-    st.subheader("→ Piata Romana / Clabucet")
+    st.subheader("→ Piata Romana")
     render_board(STOPS_DIR0, results_dir0)
 
 with col1:
-    st.subheader("→ Piata Resita")
+    st.subheader("→ Tineretului")
     render_board(STOPS_DIR1, results_dir1)
 
 # ── auto-refresh ───────────────────────────────────────────────────────────

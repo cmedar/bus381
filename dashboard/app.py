@@ -13,6 +13,12 @@ st.set_page_config(
     layout="wide",
 )
 
+st.markdown("""
+<style>
+[data-testid="stMarkdownContainer"] strong { font-weight: 800; font-size: 1rem; }
+</style>
+""", unsafe_allow_html=True)
+
 PROXY           = "https://crimson-river-eb3a.ciprian-medar.workers.dev"
 ROUTE_ID        = "184"
 REFRESH_S       = 90
@@ -110,7 +116,6 @@ def render_board(stops: list[tuple], results: dict, crossings: dict):
     h1.markdown("**ETA**")
     h2.markdown("**Arrives at**")
     h3.markdown("**Last bus**")
-    st.markdown("---")
 
     for stop_id, name in stops:
         line     = results.get(stop_id)
@@ -119,16 +124,16 @@ def render_board(stops: list[tuple], results: dict, crossings: dict):
         dot      = "🟢" if is_live else "🔘"
 
         c0, c1, c2, c3 = st.columns([3, 1, 1, 1])
-        c0.write(f"{dot} {name}")
+        c0.write(f"🚏 {name}")
         if line:
             arriving_s = int(line.get("arrivingTime", 0))
             arrives_at = (datetime.now(BUCHAREST_TZ) + timedelta(seconds=arriving_s)).strftime("%H:%M")
-            c1.write(fmt(arriving_s))
-            c2.write(arrives_at)
+            c1.write(f"{dot} {fmt(arriving_s)}")
+            c2.write(f"🚌 {arrives_at}")
         else:
             c1.write("—")
             c2.write("—")
-        c3.write(f"🚌 {last_bus}" if last_bus != "—" else "—")
+        c3.write(f"🚍 {last_bus}" if last_bus != "—" else "—")
 
 
 # ── fetch ──────────────────────────────────────────────────────────────────

@@ -47,6 +47,7 @@ services:
     depends_on:
       - kafka
     environment:
+      - KAFKA_BOOTSTRAP=kafka:9092
       - DATABRICKS_HOST=${DATABRICKS_HOST}
       - DATABRICKS_TOKEN=${DATABRICKS_TOKEN}
       - DATABRICKS_HTTP_PATH=${DATABRICKS_HTTP_PATH}

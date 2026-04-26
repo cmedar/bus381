@@ -1,8 +1,11 @@
+import os
 import time
+import json
 import requests
 import streamlit as st
 from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from kafka import KafkaConsumer
 
 st.set_page_config(
     page_title="Bus 381 · Live Arrivals",
@@ -10,9 +13,12 @@ st.set_page_config(
     layout="wide",
 )
 
-PROXY      = "https://crimson-river-eb3a.ciprian-medar.workers.dev"
-ROUTE_ID   = "184"
-REFRESH_S  = 40
+PROXY           = "https://crimson-river-eb3a.ciprian-medar.workers.dev"
+ROUTE_ID        = "184"
+REFRESH_S       = 40
+KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
+CROSSINGS_TOPIC = "bus-crossings"
+BUCHAREST_TZ    = timezone(timedelta(hours=3))
 
 _HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -44,6 +50,29 @@ STOPS_DIR1 = [
 ]
 
 
+def load_last_crossings() -> dict[str, str]:
+    """Read bus-crossings topic, return {stop_id: local_time_str} for latest crossing per stop."""
+    try:
+        consumer = KafkaConsumer(
+            CROSSINGS_TOPIC,
+            bootstrap_servers=KAFKA_BOOTSTRAP,
+            value_deserializer=lambda v: json.loads(v.decode()),
+            auto_offset_reset="earliest",
+            group_id=None,
+            consumer_timeout_ms=2000,
+        )
+        last = {}
+        for msg in consumer:
+            rec     = msg.value
+            stop_id = rec["stop_id"]
+            crossed = datetime.fromisoformat(rec["crossed_at"]).astimezone(BUCHAREST_TZ)
+            last[stop_id] = crossed.strftime("%H:%M")
+        consumer.close()
+        return last
+    except Exception:
+        return {}
+
+
 def fetch_eta(stop_id: int) -> dict | None:
     try:
         resp = requests.get(
@@ -73,24 +102,26 @@ def fmt(arriving_s: int) -> str:
     return f"{m}m {s:02d}s"
 
 
-def render_board(stops: list[tuple], results: dict):
+def render_board(stops: list[tuple], results: dict, crossings: dict):
     for stop_id, name in stops:
-        line = results.get(stop_id)
-        col_name, col_eta, col_src = st.columns([3, 1, 1])
+        line     = results.get(stop_id)
+        last_bus = crossings.get(str(stop_id), "—")
+        col_name, col_eta, col_src, col_last = st.columns([3, 1, 1, 1])
         col_name.write(f"**{name}**")
         if line:
             arriving_s = int(line.get("arrivingTime", 0))
             is_live    = not line.get("isTimetable", True)
             col_eta.write(f"**{fmt(arriving_s)}**")
-            col_src.write("🟢 live" if is_live else "🕐 schedule")
+            col_src.write("🟢 live" if is_live else "🕐 sched")
         else:
             col_eta.write("—")
             col_src.write("")
+        col_last.write(f"🚌 {last_bus}")
 
 
-# ── fetch all stops in parallel ────────────────────────────────────────────
-BUCHAREST_TZ = timezone(timedelta(hours=3))
-now = datetime.now(BUCHAREST_TZ).strftime("%H:%M:%S")
+# ── fetch ──────────────────────────────────────────────────────────────────
+now          = datetime.now(BUCHAREST_TZ).strftime("%H:%M:%S")
+crossings    = load_last_crossings()
 results_dir0 = fetch_all(STOPS_DIR0)
 results_dir1 = fetch_all(STOPS_DIR1)
 
@@ -102,11 +133,11 @@ col0, col1 = st.columns(2)
 
 with col0:
     st.subheader("→ Piata Romana")
-    render_board(STOPS_DIR0, results_dir0)
+    render_board(STOPS_DIR0, results_dir0, crossings)
 
 with col1:
     st.subheader("→ Tineretului")
-    render_board(STOPS_DIR1, results_dir1)
+    render_board(STOPS_DIR1, results_dir1, crossings)
 
 # ── auto-refresh ───────────────────────────────────────────────────────────
 time.sleep(REFRESH_S)

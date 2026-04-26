@@ -10,7 +10,7 @@ from kafka import KafkaConsumer
 st.set_page_config(
     page_title="Bus 381 · Live Arrivals",
     page_icon="🚌",
-    layout="wide",
+    layout="centered",
 )
 
 st.markdown("""
@@ -115,29 +115,21 @@ def fmt(arriving_s: int) -> str:
 
 
 def render_board(stops: list[tuple], results: dict, crossings: dict):
-    h0, h1, h2, h3 = st.columns([3, 1, 1, 1])
-    h0.markdown("**Stop**")
-    h1.markdown("**ETA**")
-    h2.markdown("**Arrives at**")
-    h3.markdown("**Last bus**")
-
     for stop_id, name in stops:
         line     = results.get(stop_id)
         last_bus = crossings.get(str(stop_id), "—")
         is_live  = line is not None and not line.get("isTimetable", True)
         dot      = "🟢" if is_live else "🔘"
 
-        c0, c1, c2, c3 = st.columns([3, 1, 1, 1])
+        c0, c1 = st.columns([2, 3])
         c0.write(f"⛩️ {name}")
         if line:
             arriving_s = int(line.get("arrivingTime", 0))
             arrives_at = (datetime.now(BUCHAREST_TZ) + timedelta(seconds=arriving_s)).strftime("%H:%M")
-            c1.write(f"{dot} {fmt(arriving_s)}")
-            c2.write(f"🚌 {arrives_at}")
+            last_str   = f"🚍 {last_bus}" if last_bus != "—" else "—"
+            c1.write(f"{dot} {fmt(arriving_s)} · 🚌 {arrives_at} · {last_str}")
         else:
             c1.write("—")
-            c2.write("—")
-        c3.write(f"🚍 {last_bus}" if last_bus != "—" else "—")
 
 
 # ── fetch ──────────────────────────────────────────────────────────────────

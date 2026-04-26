@@ -1,7 +1,7 @@
 import time
 import requests
 import streamlit as st
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 st.set_page_config(
@@ -89,7 +89,8 @@ def render_board(stops: list[tuple], results: dict):
 
 
 # ── fetch all stops in parallel ────────────────────────────────────────────
-now = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
+BUCHAREST_TZ = timezone(timedelta(hours=3))
+now = datetime.now(BUCHAREST_TZ).strftime("%H:%M:%S")
 results_dir0 = fetch_all(STOPS_DIR0)
 results_dir1 = fetch_all(STOPS_DIR1)
 

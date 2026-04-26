@@ -128,7 +128,7 @@ def render_board(stops: list[tuple], results: dict, crossings: dict):
         dot      = "🟢" if is_live else "🔘"
 
         c0, c1, c2, c3 = st.columns([3, 1, 1, 1])
-        c0.write(f"🚏 {name}")
+        c0.write(f"⛩️ {name}")
         if line:
             arriving_s = int(line.get("arrivingTime", 0))
             arrives_at = (datetime.now(BUCHAREST_TZ) + timedelta(seconds=arriving_s)).strftime("%H:%M")

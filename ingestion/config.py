@@ -21,5 +21,3 @@ CORRIDOR_STOPS = [
     (6588,  "Piata Romana",           7),
 ]  # (stop_id, stop_name, corridor_sequence)
 
-# Direction 1 — Gh. Sincai only (for dashboard)
-STOP_GH_SINCAI_DIR1 = 3784

@@ -8,7 +8,7 @@ from kafka import KafkaProducer
 from config import (
     LINE_ID, ROUTE_ID,
     POLL_INTERVAL_SECONDS, KAFKA_TOPIC,
-    MOBI_NEXT_ARR_URL, CORRIDOR_STOPS, STOP_GH_SINCAI_DIR1,
+    MOBI_NEXT_ARR_URL, CORRIDOR_STOPS,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -75,7 +75,7 @@ def main():
         value_serializer=lambda v: json.dumps(v).encode(),
         retries=5,
     )
-    log.info("Poller started — %d corridor stops + dir1 Gh.Sincai every %ds",
+    log.info("Poller started — %d corridor stops every %ds",
              len(CORRIDOR_STOPS), POLL_INTERVAL_SECONDS)
 
     while True:
@@ -84,8 +84,6 @@ def main():
 
         for stop_id, stop_name, seq in CORRIDOR_STOPS:
             poll_stop(producer, stop_id, stop_name, seq, 0, ingested_at)
-
-        poll_stop(producer, STOP_GH_SINCAI_DIR1, "Gh. Sincai", 0, 1, ingested_at)
 
         producer.flush()
         time.sleep(POLL_INTERVAL_SECONDS)

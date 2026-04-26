@@ -1,7 +1,7 @@
 LINE_ID  = 381    # human-facing route number
 ROUTE_ID = "184"  # mo-bi.ro internal route_id (from GTFS routes.txt)
 
-POLL_INTERVAL_SECONDS = 60
+POLL_INTERVAL_SECONDS = 40
 KAFKA_TOPIC = "stb-arrivals"
 
 _MOBI_PROXY          = "https://crimson-river-eb3a.ciprian-medar.workers.dev"

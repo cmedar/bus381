@@ -53,7 +53,8 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
 
-            sudo docker system prune -af
+            docker container prune -f
+            docker image prune -f
 
             docker compose up -d --build
             echo "Deployment complete."

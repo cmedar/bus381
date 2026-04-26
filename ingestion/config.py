@@ -1,7 +1,7 @@
 LINE_ID  = 381    # human-facing route number
 ROUTE_ID = "184"  # mo-bi.ro internal route_id (from GTFS routes.txt)
 
-POLL_INTERVAL_SECONDS = 90
+POLL_INTERVAL_SECONDS = 45
 KAFKA_TOPIC           = "stb-arrivals"
 CROSSINGS_TOPIC       = "bus-crossings"
 

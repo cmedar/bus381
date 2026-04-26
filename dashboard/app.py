@@ -25,7 +25,7 @@ st.markdown("""
 
 PROXY           = "https://crimson-river-eb3a.ciprian-medar.workers.dev"
 ROUTE_ID        = "184"
-REFRESH_S       = 90
+REFRESH_S       = 45
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
 CROSSINGS_TOPIC = "bus-crossings"
 BUCHAREST_TZ    = timezone(timedelta(hours=3))
@@ -100,12 +100,20 @@ def fetch_eta(stop_id: int) -> dict | None:
     return None
 
 
-def fetch_all(stops: list[tuple]) -> dict[int, dict | None]:
+def fetch_batch(stops: list[tuple]) -> dict[int, dict | None]:
     results = {}
     with ThreadPoolExecutor(max_workers=8) as ex:
         futures = {ex.submit(fetch_eta, stop_id): stop_id for stop_id, _ in stops}
         for f in as_completed(futures):
             results[futures[f]] = f.result()
+    return results
+
+
+def fetch_all(stops: list[tuple]) -> dict[int, dict | None]:
+    mid = len(stops) // 2
+    results = fetch_batch(stops[:mid])
+    time.sleep(1)
+    results.update(fetch_batch(stops[mid:]))
     return results
 
 

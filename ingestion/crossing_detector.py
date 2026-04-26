@@ -6,6 +6,7 @@ from kafka import KafkaConsumer, KafkaProducer
 from config import KAFKA_TOPIC, CROSSINGS_TOPIC
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logging.getLogger("kafka").setLevel(logging.WARNING)
 log = logging.getLogger(__name__)
 
 KAFKA_BOOTSTRAP    = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")

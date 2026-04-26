@@ -15,7 +15,7 @@ st.set_page_config(
 
 PROXY           = "https://crimson-river-eb3a.ciprian-medar.workers.dev"
 ROUTE_ID        = "184"
-REFRESH_S       = 40
+REFRESH_S       = 90
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
 CROSSINGS_TOPIC = "bus-crossings"
 BUCHAREST_TZ    = timezone(timedelta(hours=3))
@@ -63,10 +63,12 @@ def load_last_crossings() -> dict[str, str]:
         )
         last = {}
         for msg in consumer:
-            rec     = msg.value
-            stop_id = rec["stop_id"]
-            crossed = datetime.fromisoformat(rec["crossed_at"]).astimezone(BUCHAREST_TZ)
-            last[stop_id] = crossed.strftime("%H:%M")
+            rec       = msg.value
+            stop_id   = rec["stop_id"]
+            crossed   = datetime.fromisoformat(rec["crossed_at"]).astimezone(BUCHAREST_TZ)
+            eta_before = rec.get("eta_before", 0)
+            arrived   = crossed - timedelta(seconds=eta_before)
+            last[stop_id] = arrived.strftime("%H:%M")
         consumer.close()
         return last
     except Exception:
@@ -103,20 +105,30 @@ def fmt(arriving_s: int) -> str:
 
 
 def render_board(stops: list[tuple], results: dict, crossings: dict):
+    h0, h1, h2, h3 = st.columns([3, 1, 1, 1])
+    h0.markdown("**Stop**")
+    h1.markdown("**ETA**")
+    h2.markdown("**Arrives at**")
+    h3.markdown("**Last bus**")
+    st.markdown("---")
+
     for stop_id, name in stops:
         line     = results.get(stop_id)
         last_bus = crossings.get(str(stop_id), "—")
-        col_name, col_eta, col_src, col_last = st.columns([3, 1, 1, 1])
-        col_name.write(f"**{name}**")
+        is_live  = line is not None and not line.get("isTimetable", True)
+        dot      = "🟢" if is_live else "🔘"
+
+        c0, c1, c2, c3 = st.columns([3, 1, 1, 1])
+        c0.write(f"{dot} {name}")
         if line:
             arriving_s = int(line.get("arrivingTime", 0))
-            is_live    = not line.get("isTimetable", True)
-            col_eta.write(f"**{fmt(arriving_s)}**")
-            col_src.write("🟢 live" if is_live else "🕐 sched")
+            arrives_at = (datetime.now(BUCHAREST_TZ) + timedelta(seconds=arriving_s)).strftime("%H:%M")
+            c1.write(fmt(arriving_s))
+            c2.write(arrives_at)
         else:
-            col_eta.write("—")
-            col_src.write("")
-        col_last.write(f"🚌 {last_bus}")
+            c1.write("—")
+            c2.write("—")
+        c3.write(f"🚌 {last_bus}" if last_bus != "—" else "—")
 
 
 # ── fetch ──────────────────────────────────────────────────────────────────
@@ -127,17 +139,13 @@ results_dir1 = fetch_all(STOPS_DIR1)
 
 # ── render ─────────────────────────────────────────────────────────────────
 st.title("🚌 Bus 381 · Live Arrivals")
-st.caption(f"Last updated: {now} · refreshes every {REFRESH_S}s")
+st.caption(f"Last updated: {now}")
 
-col0, col1 = st.columns(2)
+st.subheader("→ Piata Romana")
+render_board(STOPS_DIR0, results_dir0, crossings)
 
-with col0:
-    st.subheader("→ Piata Romana")
-    render_board(STOPS_DIR0, results_dir0, crossings)
-
-with col1:
-    st.subheader("→ Tineretului")
-    render_board(STOPS_DIR1, results_dir1, crossings)
+st.subheader("→ Tineretului")
+render_board(STOPS_DIR1, results_dir1, crossings)
 
 # ── auto-refresh ───────────────────────────────────────────────────────────
 time.sleep(REFRESH_S)

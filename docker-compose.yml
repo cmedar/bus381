@@ -23,7 +23,7 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # mo-bi.ro poller — publishes route 381 positions to Kafka every 30s
+  # mo-bi.ro poller — publishes route 381 positions to Kafka every 90s
   poller:
     build: .
     command: python ingestion/poller.py
@@ -31,6 +31,9 @@ services:
       - kafka
     environment:
       - KAFKA_BOOTSTRAP=kafka:9092
+      - DATA_DIR=/data
+    volumes:
+      - /home/bus381/data:/data
     restart: unless-stopped
     logging:
       driver: json-file
@@ -66,6 +69,9 @@ services:
       - kafka
     environment:
       - KAFKA_BOOTSTRAP=kafka:9092
+      - DATA_DIR=/data
+    volumes:
+      - /home/bus381/data:/data
     restart: unless-stopped
     logging:
       driver: json-file

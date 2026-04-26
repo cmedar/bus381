@@ -1,24 +1,51 @@
-# Bus 381 Tineretului–Română Transit
+# Bus 381 · Live Arrivals & Crossing Detector
 
-> **How late is the next 381 — really?**
-> A Spark Structured Streaming pipeline that ingests live STB vehicle positions, sessionizes each run along the Tineretului–Piața Română corridor, builds a self-improving historical baseline, and serves a live ETA with a confidence signal.
+> Real-time arrival board and bus crossing tracker for Bucharest line 381 (Tineretului ↔ Piața Română).
 
 ---
 
 ## What this project does
 
-The STB app shows you where bus 381 is. This pipeline goes further — it tells you when the next 381 is estimated to arrive at Gh. Șincai station, and how long it will take to reach Piața Română at this specific hour, estimated from historical data accumulated for this exact time interval.
-
-It does this by treating every vehicle ping as a stream event, building stateful sessions per run, and comparing live pace against an accumulated baseline that grows richer every day.
-
-**On day 1** the confidence interval is wide — the system has little history.  
-**By day 14** the baseline has absorbed rush hours, weekday patterns, and typical congestion pockets — the ETA narrows.
+- **Live departure board** — shows the next bus ETA at every monitored stop, both directions, updated every 90s. Distinguishes GPS-tracked buses from schedule fallback.
+- **Crossing detection** — detects when a bus passes each stop by watching for ETA resets and records the estimated arrival time.
+- **CSV history** — every ETA reading and every detected crossing is appended to CSV files on the host for later analysis.
+- **Kafka backbone** — decouples the poller, crossing detector, and dashboard; enables future replay and stream processing.
 
 ---
 
-## Architecture
+## How it works
 
-![Architecture](Architecture.png)
+### Stop-as-sensor pattern
+
+There is no direct vehicle tracking. Instead, each stop acts as a sensor:
+
+- The poller asks each stop *"how long until the next 381 arrives?"* every 90 seconds.
+- When a stop's ETA drops to near zero, then jumps back up on the next poll, a bus just passed.
+- The crossing detector watches for ETA jumps > 60 seconds and fires a crossing event.
+- Estimated arrival time = `crossed_at − eta_before` (when we detected the reset, minus how many seconds the bus was away on the last reading).
+
+Accuracy is ±poll interval (±90s worst case). Shorter intervals give tighter estimates.
+
+### Data flow
+
+```
+mo-bi.ro API
+     │
+     ▼
+  poller.py  ──────────────────────────────────► arrivals.csv
+     │
+     ▼  (stb-arrivals topic)
+  Kafka
+     │
+     ├──► crossing_detector.py ──────────────► crossings.csv
+     │         │
+     │         ▼  (bus-crossings topic)
+     │       Kafka
+     │         │
+     └─────────┴──► dashboard/app.py
+```
+
+The dashboard fetches ETAs directly from the API in parallel (for responsiveness) and reads the `bus-crossings` Kafka topic for last arrival times.
 
 ---
 
@@ -26,197 +53,132 @@ It does this by treating every vehicle ping as a stream event, building stateful
 
 | Layer | Technology |
 |---|---|
-| Ingestion | Python 3.11 · `requests` · `kafka-python` |
-| Message bus | Apache Kafka (local Docker) or Confluent Cloud free tier |
-| Stream processing | Apache Spark 3.5 · Structured Streaming · `mapGroupsWithState` |
-| Storage | Delta Lake · medallion architecture (Bronze / Silver / Gold) |
-| Orchestration | Databricks Community Edition Workflows |
-| Dashboard | Streamlit · `pydeck` for map · `plotly` for charts |
-| Infrastructure | AWS S3 (or DBFS) for Delta tables |
+| API source | mo-bi.ro `nextArrivals` endpoint |
+| Proxy | Cloudflare Worker (EC2 IPs are blocked by mo-bi.ro) |
+| Ingestion | Python · `requests` · `kafka-python` |
+| Message bus | Apache Kafka (KRaft mode, no Zookeeper) |
+| Persistence | CSV files on EC2 host (host-mounted Docker volume) |
+| Dashboard | Streamlit |
+| Infrastructure | AWS EC2 t2.small · Docker Compose |
 
 ---
 
-## The corridor
+## Monitored stops
 
-**Line 381** · Colegiul Național Gh. Șincai → Piața Română  
-6 stops · ~21 min scheduled · every 7 min peak
+### Direction 0 — → Piața Română
 
-```
-Colegiul Gh. Șincai  ──►  Clăbucet  ──►  ...  ──►  Piața Română
-     [start]                                           [end]
-  44.4281°N, 26.0966°E                          44.4436°N, 26.0977°E
-```
+| seq | Stop | Stop ID |
+|---|---|---|
+| 0 | Visana | 3688 |
+| 1 | Gh. Sincai | 3782 |
+| 2 | Bd. Marasesti | 3678 |
+| 3 | Piata Sf. Gheorghe | 7257 |
+| 4 | Universitate | 7256 |
+| 5 | Bd. Nicolae Balcescu | 12353 |
+| 6 | Arthur Verona | 12354 |
+| 7 | Piata Romana | 6588 |
 
-The bounding box filter keeps only pings within this corridor, discarding the rest of the line's route. This makes processing cheap and keeps the baseline clean.
+### Direction 1 — → Tineretului
 
----
-
-## Data model
-
-### Bronze — raw pings
-```
-vehicle_id      STRING     STB vehicle identifier
-license_plate   STRING
-latitude        DOUBLE
-longitude       DOUBLE
-line_id         INT        381
-direction_id    INT
-passenger_count INT
-ingested_at     TIMESTAMP  wall-clock time of poll
-event_time      TIMESTAMP  derived from ping sequence
-```
-
-### Silver — sessions
-```
-session_id          STRING     vehicle_id + run start timestamp
-vehicle_id          STRING
-run_start_ts        TIMESTAMP  first ping inside corridor
-run_end_ts          TIMESTAMP  last ping inside corridor (null if in progress)
-duration_seconds    INT        null if in progress
-stop_sequence       ARRAY<INT> stops visited in order
-pace_kmh            DOUBLE     average speed across corridor
-deviation_seconds   INT        vs current baseline (positive = late)
-is_complete         BOOLEAN
-```
-
-### Gold — baseline + ETA signal
-```
-hour_of_day         INT
-day_of_week         INT
-baseline_duration_s DOUBLE     rolling mean of completed sessions
-baseline_stddev_s   DOUBLE     rolling stddev — drives confidence interval
-sample_count        INT        sessions used in baseline
-eta_next_arrival    TIMESTAMP  projected arrival at Piața Română
-confidence_low_s    INT        baseline_duration - 1.5 * stddev
-confidence_high_s   INT        baseline_duration + 1.5 * stddev
-updated_at          TIMESTAMP
-```
+| seq | Stop | Stop ID |
+|---|---|---|
+| 0 | Orlando | 5972 |
+| 1 | Piata Romana | 3826 |
+| 2 | George Enescu | 12514 |
+| 3 | Bd. Nicolae Balcescu | 7411 |
+| 4 | Piata 21 Dec 1989 | 7462 |
+| 5 | Piata Sf. Gheorghe | 6611 |
+| 6 | Bd. Marasesti | 3667 |
+| 7 | Gh. Sincai | 3784 |
 
 ---
 
-## Spark concepts demonstrated
+## Dashboard
 
-| Concept | Where |
+Two stacked tables (one per direction) with columns:
+
+| Column | Description |
 |---|---|
-| `readStream` from Kafka | Ingestion into Bronze |
-| Watermarking | 2-minute late-arrival tolerance on event_time |
-| Sliding window aggregation | 5-minute windows for pace computation |
-| `mapGroupsWithState` | Stateful sessionization per vehicle run |
-| `foreachBatch` write | Upsert sessions into Silver Delta table |
-| Incremental Gold update | Micro-batch aggregation Bronze → Gold |
-| Trigger interval | `processingTime="20 seconds"` micro-batch |
+| 🟢/🔘 Stop | Stop name · green = GPS live, grey = schedule fallback |
+| ETA | Time until next bus (mm ss) |
+| Arrives at | Current time + ETA (absolute clock time) |
+| Last bus | Estimated time the previous bus passed this stop |
 
-This combination — stateful arbitrary state management via `mapGroupsWithState` on top of watermarked windows — is the core Spark Structured Streaming showcase. It goes beyond windowed aggregations into true stateful session tracking where state persists across micro-batches.
+Refreshes every 90 seconds.
 
 ---
 
-## Baseline growth mechanic
+## CSV files
 
-The Gold table is append-friendly. Every completed session contributes to the rolling mean and stddev for its `(hour_of_day, day_of_week)` bucket.
+Written to `/home/bus381/data/` on the EC2 host, mounted into containers at `/data/`.
 
+**`arrivals.csv`** — one row per stop per poll:
 ```
-Week 1  →  sparse buckets, wide confidence intervals (±8 min)
-Week 2  →  weekday rush hours filling in, intervals tightening
-Week 4  →  full week coverage, intervals stable (±2 min typical)
+ingested_at, stop_id, stop_name, direction, corridor_seq, arriving_in_seconds, is_timetable
 ```
 
-This self-improving behaviour is visible on the dashboard's baseline trend panel — the confidence band visibly narrows as data accumulates.
-
----
-
-## Dashboard panels
-
-**Live ETA** — next expected arrival at Piața Română for line 381, with a confidence band derived from Gold. Updates every 30 seconds. Color-coded: green (on pace), amber (1–3 min late), red (3+ min late).
-
-**Delay heatmap** — hour-of-day (x) × day-of-week (y) grid. Cell color = median deviation in seconds. Reveals when the corridor is structurally slow vs when it's an outlier.
-
-**Baseline trend** — rolling chart of session durations vs baseline mean. Shows how today's runs compare to accumulated history. The confidence band is drawn as a shaded region.
+**`crossings.csv`** — one row per detected bus crossing:
+```
+crossed_at, stop_id, stop_name, direction, corridor_seq, eta_before, eta_after
+```
 
 ---
 
 ## Project structure
 
 ```
-tineretului-romana/
+bus381/
 ├── ingestion/
-│   ├── poller.py           # polls STB API, publishes to Kafka
-│   └── config.py           # line ID, corridor bbox, poll interval
-├── streaming/
-│   ├── pipeline.py         # main Spark Structured Streaming job
-│   ├── sessionizer.py      # mapGroupsWithState logic
-│   └── schema.py           # Bronze / Silver / Gold schemas
-├── storage/
-│   └── delta_utils.py      # table init, upsert helpers
+│   ├── config.py               # stop IDs, Kafka topics, poll interval
+│   ├── poller.py               # polls all stops, publishes to Kafka + arrivals.csv
+│   └── crossing_detector.py    # detects crossings, publishes to Kafka + crossings.csv
 ├── dashboard/
-│   └── app.py              # Streamlit app, three panels
-├── notebooks/
-│   └── exploration.ipynb   # ad-hoc analysis, baseline inspection
-├── architecture.png        # pipeline diagram
-└── README.md
+│   └── app.py                  # Streamlit live departure board
+├── docker-compose.yml          # Kafka + poller + crossing-detector + dashboard
+└── Dockerfile
 ```
 
 ---
 
-## Running locally
+## Deployment
 
-### Prerequisites
-- Python 3.11+
-- Docker (for Kafka) or Confluent Cloud free account
-- Databricks Community Edition (for Spark + Delta Lake)
-- AWS S3 bucket or DBFS path for Delta tables
+The project runs on EC2 via Docker Compose. GitHub Actions deploys on push to `main`.
 
-### 1. Start Kafka
 ```bash
-docker-compose up -d   # starts Zookeeper + Kafka broker
+# on EC2 — manual deploy
+docker compose pull
+docker compose up -d --build
 ```
 
-### 2. Configure
-```bash
-cp config.example.env .env
-# set STB_LINE_ID, KAFKA_BOOTSTRAP, S3_BUCKET / DBFS_PATH
+The data directory is created automatically on first run:
 ```
-
-### 3. Start the poller
-```bash
-python ingestion/poller.py
-```
-
-### 4. Run the Spark job
-```bash
-# on Databricks Community Edition
-# upload streaming/pipeline.py and run as a Workflow
-# or run locally with spark-submit if Spark installed
-spark-submit streaming/pipeline.py
-```
-
-### 5. Launch the dashboard
-```bash
-streamlit run dashboard/app.py
+/home/bus381/data/
+├── arrivals.csv
+└── crossings.csv
 ```
 
 ---
 
-## MVP scope and future additions
+## Roadmap
 
-**MVP (this repo)**
-- Single line (381), single direction (→ Piața Română)
-- Vehicle position stream only
-- Self-building baseline from live data
-- Three-panel Streamlit dashboard
+### Phase 1 — Live ingestion ✅ (current)
+- Poll mo-bi.ro API every 90s for all corridor stops, both directions
+- Publish ETA readings to Kafka (`stb-arrivals`)
+- Detect bus crossings via ETA reset pattern, publish to Kafka (`bus-crossings`)
+- Live dashboard: ETA, arrival time, last bus per stop
+- Persist all readings and crossings to CSV
 
-**Future**
-- Weather stream enrichment (cross-stream join) — delay by condition
-- Both directions on line 381
-- Additional lines on the same corridor
-- Anomaly detection — flag sessions that break the pattern
-- GTFS schedule join — deviation vs published timetable, not just historical pace
+### Phase 2 — Historical analysis (next)
+- Load `arrivals.csv` and `crossings.csv` into Databricks
+- Build Silver table: clean crossing events with travel times between stops
+- Build Gold table: average journey time per stop pair, per hour, per day of week
+- Identify peak congestion windows and structural delays
+
+### Phase 3 — Baseline ETA (future)
+- Feed historical baseline back into dashboard
+- Show predicted arrival with confidence interval based on accumulated data
+- Self-improving: the more data collected, the tighter the interval
 
 ---
 
-## Why this project
-
-This project demonstrates the streaming half of the modern data engineering stack: continuous ingestion, stateful micro-batch processing, and a baseline that evolves in real time — covering the Spark Structured Streaming depth that cloud data roles are hiring for.
-
----
-
-*Built on data from [STB SA](https://info.stbsa.ro) — Societatea de Transport București.*
+*Data sourced from [mo-bi.ro](https://mo-bi.ro) — Mobilitate în București.*

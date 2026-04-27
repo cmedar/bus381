@@ -1,4 +1,5 @@
 import os
+import csv
 import time
 import json
 import requests
@@ -31,6 +32,7 @@ CROSSINGS_TOPIC = "bus-crossings"
 BUCHAREST_TZ    = timezone(timedelta(hours=3))
 DATA_DIR        = os.getenv("DATA_DIR", "/data")
 SESSIONS_JSON   = os.path.join(DATA_DIR, "sessions.json")
+JOURNEYS_CSV    = os.path.join(DATA_DIR, "journeys.csv")
 
 # stop_id → corridor seq (dir0, Sincai=1 … Romana=7)
 STOP_SEQ = {3782: 1, 3678: 2, 7257: 3, 7256: 4, 12353: 5, 12354: 6, 6588: 7}
@@ -66,6 +68,15 @@ STOPS_DIR1 = [
 ]
 
 
+def load_journeys(n: int = 10) -> list[dict]:
+    try:
+        with open(JOURNEYS_CSV, newline="") as f:
+            rows = list(csv.DictReader(f))
+        return rows[-n:]
+    except Exception:
+        return []
+
+
 def load_sessions() -> list[dict]:
     try:
         with open(SESSIONS_JSON) as f:
@@ -74,7 +85,15 @@ def load_sessions() -> list[dict]:
         return []
 
 
-def fmt_elapsed(sessions: list, seq: int) -> str:
+def fmt_elapsed(sessions: list, seq: int, journeys: list = None) -> str:
+    if seq == 7 and journeys:
+        parts = []
+        for i, j in enumerate(journeys[-10:]):
+            label   = BUS_LABELS[i] if i < len(BUS_LABELS) else str(i + 1)
+            total_s = j.get("total_seconds", "")
+            parts.append(f"{label}:{int(total_s)//60}m" if total_s else f"{label}:—")
+        return "  ".join(parts)
+
     parts = []
     for i, s in enumerate(sessions[-10:]):
         label = BUS_LABELS[i] if i < len(BUS_LABELS) else str(i + 1)
@@ -88,7 +107,6 @@ def fmt_elapsed(sessions: list, seq: int) -> str:
             stop   = datetime.fromisoformat(crossings[str(seq)])
             delta  = int((stop - start).total_seconds() // 60)
             parts.append(f"{label}:{delta}m")
-    # drop trailing dashes — buses that clearly haven't reached this stop
     while parts and parts[-1].endswith(":—"):
         parts.pop()
     return "  ".join(parts)
@@ -158,7 +176,8 @@ def fmt(arriving_s: int) -> str:
     return f"{m}m {s:02d}s"
 
 
-def render_board(stops: list[tuple], results: dict, crossings: dict, sessions: list = None):
+def render_board(stops: list[tuple], results: dict, crossings: dict,
+                 sessions: list = None, journeys: list = None):
     for stop_id, name in stops:
         line     = results.get(stop_id)
         last_bus = crossings.get(str(stop_id), "—")
@@ -176,8 +195,8 @@ def render_board(stops: list[tuple], results: dict, crossings: dict, sessions: l
             eta_line = "—"
 
         seq = STOP_SEQ.get(stop_id)
-        if sessions and seq:
-            matrix = fmt_elapsed(sessions, seq)
+        if seq:
+            matrix = fmt_elapsed(sessions or [], seq, journeys)
             c1.write(f"{eta_line}\n\n`{matrix}`")
         else:
             c1.write(eta_line)
@@ -187,6 +206,7 @@ def render_board(stops: list[tuple], results: dict, crossings: dict, sessions: l
 now          = datetime.now(BUCHAREST_TZ).strftime("%H:%M:%S")
 crossings    = load_last_crossings()
 sessions     = load_sessions()
+journeys     = load_journeys()
 results_dir0 = fetch_all(tuple(sid for sid, _ in STOPS_DIR0))
 results_dir1 = fetch_all(tuple(sid for sid, _ in STOPS_DIR1))
 
@@ -195,7 +215,7 @@ st.title("🚌 Bus 381 · Live Arrivals")
 st.markdown(f"<span style='font-size:2rem'>{now}</span>", unsafe_allow_html=True)
 
 st.subheader("→ Piata Romana")
-render_board(STOPS_DIR0, results_dir0, crossings, sessions)
+render_board(STOPS_DIR0, results_dir0, crossings, sessions, journeys)
 
 st.subheader("→ Tineretului")
 render_board(STOPS_DIR1, results_dir1, crossings)

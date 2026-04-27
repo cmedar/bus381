@@ -17,7 +17,7 @@ st.set_page_config(
 st.markdown("""
 <style>
 [data-testid="stMarkdownContainer"] strong { font-weight: 800; font-size: 1rem; }
-[data-testid="stLayoutWrapper"] { max-width: 600px; }
+[data-testid="stLayoutWrapper"] { max-width: 800px; }
 [data-testid="stMainMenu"] { display: none; }
 [data-testid="stBaseButton-header"] { display: none; }
 .st-emotion-cache-lvs4k2 { display: none; }
@@ -209,7 +209,7 @@ def render_board(stops: list[tuple], results: dict, crossings: dict,
         is_live  = line is not None and not line.get("isTimetable", True)
         dot      = "🟢" if is_live else "🔘"
 
-        c0, c1 = st.columns([2, 3])
+        c0, c1 = st.columns([1, 3])
         c0.write(f"⛩️ {name}")
         if line:
             arriving_s = int(line.get("arrivingTime", 0))

@@ -85,28 +85,53 @@ def load_sessions() -> list[dict]:
         return []
 
 
+SEQ_TO_CSV_COL = {
+    1: "sincai_at", 2: "marasesti_at", 3: "sf_gheorghe_at",
+    4: "universitate_at", 5: "nicolae_balcescu_at",
+    6: "arthur_verona_at", 7: "romana_at",
+}
+
+
+def _elapsed_from_journey(j: dict, seq: int) -> str:
+    if seq == 7:
+        total_s = j.get("total_seconds", "")
+        return f"{int(total_s)//60}m" if total_s else "—"
+    sincai = j.get("sincai_at", "")
+    stop   = j.get(SEQ_TO_CSV_COL.get(seq, ""), "")
+    if not sincai or not stop:
+        return "—"
+    if seq == 1:
+        return "●"
+    delta = int((datetime.fromisoformat(stop) - datetime.fromisoformat(sincai)).total_seconds() // 60)
+    return f"{delta}m"
+
+
+def _elapsed_from_session(s: dict, seq: int) -> str:
+    crossings = s.get("crossings", {})
+    if str(seq) not in crossings:
+        return "—"
+    if seq == 1:
+        return "●"
+    start = datetime.fromisoformat(crossings["1"])
+    stop  = datetime.fromisoformat(crossings[str(seq)])
+    return f"{int((stop - start).total_seconds() // 60)}m"
+
+
 def fmt_elapsed(sessions: list, seq: int, journeys: list = None) -> str:
-    if seq == 7 and journeys:
-        parts = []
-        for i, j in enumerate(journeys[-10:]):
-            label   = BUS_LABELS[i] if i < len(BUS_LABELS) else str(i + 1)
-            total_s = j.get("total_seconds", "")
-            parts.append(f"{label}:{int(total_s)//60}m" if total_s else f"{label}:—")
-        return "  ".join(parts)
+    # completed journeys from CSV + in-progress sessions merged, newest last
+    completed   = journeys or []
+    in_progress = [s for s in (sessions or []) if s.get("status") == "in_progress"]
+    window      = (completed + in_progress)[-10:]
 
     parts = []
-    for i, s in enumerate(sessions[-10:]):
+    for i, entry in enumerate(window):
         label = BUS_LABELS[i] if i < len(BUS_LABELS) else str(i + 1)
-        crossings = s.get("crossings", {})
-        if str(seq) not in crossings:
-            parts.append(f"{label}:—")
-        elif seq == 1:
-            parts.append(f"{label}:●")
+        if "total_seconds" in entry or SEQ_TO_CSV_COL.get(seq, "") in entry:
+            val = _elapsed_from_journey(entry, seq)
         else:
-            start  = datetime.fromisoformat(crossings["1"])
-            stop   = datetime.fromisoformat(crossings[str(seq)])
-            delta  = int((stop - start).total_seconds() // 60)
-            parts.append(f"{label}:{delta}m")
+            val = _elapsed_from_session(entry, seq)
+        parts.append(f"{label}:{val}")
+
     while parts and parts[-1].endswith(":—"):
         parts.pop()
     return "  ".join(parts)

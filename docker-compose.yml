@@ -41,7 +41,7 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # Streamlit dashboard — reads Gold table from Databricks
+  # Streamlit dashboard
   dashboard:
     build: .
     command: streamlit run dashboard/app.py --server.port=8502 --server.address=0.0.0.0
@@ -51,9 +51,27 @@ services:
       - kafka
     environment:
       - KAFKA_BOOTSTRAP=kafka:9092
-      - DATABRICKS_HOST=${DATABRICKS_HOST}
-      - DATABRICKS_TOKEN=${DATABRICKS_TOKEN}
-      - DATABRICKS_HTTP_PATH=${DATABRICKS_HTTP_PATH}
+      - DATA_DIR=/data
+    volumes:
+      - /home/bus381/data:/data
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # session tracker — sessionizes bus-crossings into journeys, writes sessions.json + journeys.csv
+  session-tracker:
+    build: .
+    command: python ingestion/session_tracker.py
+    depends_on:
+      - kafka
+    environment:
+      - KAFKA_BOOTSTRAP=kafka:9092
+      - DATA_DIR=/data
+    volumes:
+      - /home/bus381/data:/data
     restart: unless-stopped
     logging:
       driver: json-file

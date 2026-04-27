@@ -118,9 +118,10 @@ def _elapsed_from_session(s: dict, seq: int) -> str:
 
 
 def fmt_elapsed(sessions: list, seq: int, journeys: list = None) -> str:
-    # completed journeys from CSV + in-progress sessions merged, newest last
+    # completed journeys from CSV + in-progress sessions that have reached this stop
     completed   = journeys or []
-    in_progress = [s for s in (sessions or []) if s.get("status") == "in_progress"]
+    in_progress = [s for s in (sessions or [])
+                   if s.get("status") == "in_progress" and s.get("last_seq", 0) >= seq]
     window      = (completed + in_progress)[-10:]
 
     parts = []

@@ -26,7 +26,7 @@ ARRIVALS_FIELDS = [
 
 # Adaptive fast-polling thresholds for Gh. Sincai
 FAST_POLL_TRIGGER  = 60   # ETA <= 60s  → enter fast poll mode
-FAST_POLL_RESET    = 120  # ETA > 120s  → bus reset, exit fast poll mode
+FAST_POLL_RESET    = 120  # ETA >= 120s → bus reset, exit fast poll mode
 FAST_POLL_INTERVAL = 20   # seconds between fast polls when ETA <= 60s
 FAST_POLL_AT_STOP  = 10   # seconds between fast polls when ETA = 0s
 GH_SINCAI_WATCH = {
@@ -132,7 +132,7 @@ def fast_poll_gh_sincai(producer, gh_sincai_eta: dict, deadline: float):
             eta = poll_stop(producer, stop_id, stop_name, seq, direction, ingested_at)
             if eta is not None:
                 gh_sincai_eta[sid] = eta
-                if eta > FAST_POLL_RESET:
+                if eta >= FAST_POLL_RESET:
                     log.info("  Gh.Sincai dir%d reset to %ds — fast poll done", direction, eta)
         producer.flush()
 

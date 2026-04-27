@@ -24,6 +24,16 @@ ARRIVALS_FIELDS = [
     "corridor_seq", "arriving_in_seconds", "is_timetable",
 ]
 
+# Adaptive fast-polling thresholds for Gh. Sincai
+FAST_POLL_TRIGGER  = 60   # ETA <= 60s  → enter fast poll mode
+FAST_POLL_RESET    = 120  # ETA > 120s  → bus reset, exit fast poll mode
+FAST_POLL_INTERVAL = 20   # seconds between fast polls when ETA <= 60s
+FAST_POLL_AT_STOP  = 10   # seconds between fast polls when ETA = 0s
+GH_SINCAI_WATCH = {
+    "3782": (3782, "Gh. Sincai", 1, 0),  # stop_id, name, seq, direction
+    "3784": (3784, "Gh. Sincai", 7, 1),
+}
+
 _HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Accept": "application/json, */*",
@@ -56,7 +66,7 @@ def find_381(data: dict) -> dict | None:
 
 
 def poll_stop(producer, stop_id: int, stop_name: str, corridor_seq: int,
-              direction: int, ingested_at: str):
+              direction: int, ingested_at: str) -> int | None:
     try:
         data = fetch_next_arrivals(stop_id)
         line = find_381(data)
@@ -87,12 +97,44 @@ def poll_stop(producer, stop_id: int, stop_name: str, corridor_seq: int,
                 "arriving_in_seconds": arriving_s,
                 "is_timetable":        is_timetable,
             })
+            return arriving_s
         else:
             log.info("  [dir%d] seq%d %-26s no data", direction, corridor_seq, stop_name)
     except requests.HTTPError as e:
         log.error("HTTP error stop %s: %s", stop_id, e)
     except Exception as e:
         log.error("Poll error stop %s: %s", stop_id, e)
+    return None
+
+
+def fast_poll_gh_sincai(producer, gh_sincai_eta: dict, deadline: float):
+    """Fast-poll Gh. Sincai stops while ETA <= 60s. Stops when all reset or deadline reached."""
+    while time.time() < deadline:
+        active = {
+            sid: info for sid, info in GH_SINCAI_WATCH.items()
+            if gh_sincai_eta.get(sid) is not None and gh_sincai_eta[sid] <= FAST_POLL_TRIGGER
+        }
+        if not active:
+            break
+
+        min_eta  = min(gh_sincai_eta[sid] for sid in active)
+        interval = FAST_POLL_AT_STOP if min_eta == 0 else FAST_POLL_INTERVAL
+        sleep_s  = min(interval, deadline - time.time())
+        if sleep_s > 0:
+            time.sleep(sleep_s)
+
+        if time.time() >= deadline:
+            break
+
+        ingested_at = datetime.now(timezone.utc).isoformat()
+        log.info("--- fast poll Gh.Sincai %s ---", ingested_at[11:19])
+        for sid, (stop_id, stop_name, seq, direction) in active.items():
+            eta = poll_stop(producer, stop_id, stop_name, seq, direction, ingested_at)
+            if eta is not None:
+                gh_sincai_eta[sid] = eta
+                if eta > FAST_POLL_RESET:
+                    log.info("  Gh.Sincai dir%d reset to %ds — fast poll done", direction, eta)
+        producer.flush()
 
 
 def main():
@@ -106,17 +148,34 @@ def main():
              len(CORRIDOR_STOPS_DIR0), len(CORRIDOR_STOPS_DIR1), POLL_INTERVAL_SECONDS, ARRIVALS_CSV)
 
     while True:
-        ingested_at = datetime.now(timezone.utc).isoformat()
+        ingested_at   = datetime.now(timezone.utc).isoformat()
+        deadline      = time.time() + POLL_INTERVAL_SECONDS
+        gh_sincai_eta = {}
+
         log.info("--- poll %s ---", ingested_at[11:19])
 
         for stop_id, stop_name, seq in CORRIDOR_STOPS_DIR0:
-            poll_stop(producer, stop_id, stop_name, seq, 0, ingested_at)
+            eta = poll_stop(producer, stop_id, stop_name, seq, 0, ingested_at)
+            if str(stop_id) in GH_SINCAI_WATCH:
+                gh_sincai_eta[str(stop_id)] = eta
 
         for stop_id, stop_name, seq in CORRIDOR_STOPS_DIR1:
-            poll_stop(producer, stop_id, stop_name, seq, 1, ingested_at)
+            eta = poll_stop(producer, stop_id, stop_name, seq, 1, ingested_at)
+            if str(stop_id) in GH_SINCAI_WATCH:
+                gh_sincai_eta[str(stop_id)] = eta
 
         producer.flush()
-        time.sleep(POLL_INTERVAL_SECONDS)
+
+        needs_fast = any(
+            eta is not None and eta <= FAST_POLL_TRIGGER
+            for eta in gh_sincai_eta.values()
+        )
+        if needs_fast:
+            fast_poll_gh_sincai(producer, gh_sincai_eta, deadline)
+
+        remaining = deadline - time.time()
+        if remaining > 0:
+            time.sleep(remaining)
 
 
 if __name__ == "__main__":

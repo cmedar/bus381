@@ -195,8 +195,8 @@ def render_board(stops: list[tuple], results: dict, crossings: dict,
             eta_line = "—"
 
         seq = STOP_SEQ.get(stop_id)
-        if seq:
-            matrix = fmt_elapsed(sessions or [], seq, journeys)
+        matrix = fmt_elapsed(sessions or [], seq, journeys) if seq else ""
+        if matrix:
             c1.write(f"{eta_line}\n\n`{matrix}`")
         else:
             c1.write(eta_line)

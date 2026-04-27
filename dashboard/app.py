@@ -76,7 +76,7 @@ def load_sessions() -> list[dict]:
 
 def fmt_elapsed(sessions: list, seq: int) -> str:
     parts = []
-    for i, s in enumerate(sessions):
+    for i, s in enumerate(sessions[-10:]):
         label = BUS_LABELS[i] if i < len(BUS_LABELS) else str(i + 1)
         crossings = s.get("crossings", {})
         if str(seq) not in crossings:

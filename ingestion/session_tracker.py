@@ -16,7 +16,8 @@ DATA_DIR        = Path(os.getenv("DATA_DIR", "/data"))
 SESSIONS_JSON   = DATA_DIR / "sessions.json"
 JOURNEYS_CSV    = DATA_DIR / "journeys.csv"
 
-STALE_MINUTES = 60  # drop sessions inactive longer than this
+STALE_MINUTES        = 60   # drop sessions inactive longer than this
+MAX_SEGMENT_MINUTES  = 15   # reject crossing assignment if gap since last stop > this
 START_SEQ     = 1   # Gh. Sincai
 END_SEQ       = 7   # Piata Romana
 CORRIDOR_DIR  = 0
@@ -104,6 +105,12 @@ def append_journey(session: Session):
         writer.writerow(row)
 
 
+def _within_plausible_time(session: Session, crossed_at: str) -> bool:
+    last_cross = session.crossings[session.last_seq]["crossed_at"]
+    elapsed_s  = (datetime.fromisoformat(crossed_at) - datetime.fromisoformat(last_cross)).total_seconds()
+    return elapsed_s <= MAX_SEGMENT_MINUTES * 60
+
+
 def purge_stale(sessions: list) -> list:
     """Remove sessions with no update in STALE_MINUTES."""
     cutoff = datetime.now(timezone.utc).timestamp() - STALE_MINUTES * 60
@@ -147,11 +154,16 @@ def main():
                      rec["crossed_at"][11:19], len(sessions))
 
         else:
-            candidates = [s for s in sessions
-                          if s.status == "in_progress" and s.last_seq == seq - 1]
+            candidates = [
+                s for s in sessions
+                if s.status == "in_progress"
+                and s.last_seq == seq - 1
+                and _within_plausible_time(s, rec["crossed_at"])
+            ]
             if not candidates:
-                log.warning("No session waiting for seq=%d (%s), skipping",
-                            seq, STOP_NAMES.get(seq, seq))
+                log.warning("No plausible session for seq=%d (%s) at %s — skipping "
+                            "(FIFO mismatch or no bus in corridor)",
+                            seq, STOP_NAMES.get(seq, seq), rec["crossed_at"][11:19])
                 continue
             target = min(candidates, key=lambda s: s.started_at)
             target.add_crossing(rec)

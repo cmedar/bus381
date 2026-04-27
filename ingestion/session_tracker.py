@@ -16,10 +16,10 @@ DATA_DIR        = Path(os.getenv("DATA_DIR", "/data"))
 SESSIONS_JSON   = DATA_DIR / "sessions.json"
 JOURNEYS_CSV    = DATA_DIR / "journeys.csv"
 
-MAX_SLOTS    = 5
-START_SEQ    = 1   # Gh. Sincai
-END_SEQ      = 7   # Piata Romana
-CORRIDOR_DIR = 0
+STALE_MINUTES = 60  # drop sessions inactive longer than this
+START_SEQ     = 1   # Gh. Sincai
+END_SEQ       = 7   # Piata Romana
+CORRIDOR_DIR  = 0
 
 STOP_NAMES = {
     1: "Gh. Sincai",
@@ -104,12 +104,18 @@ def append_journey(session: Session):
         writer.writerow(row)
 
 
-def evict_slot(sessions: list) -> int:
-    """Evict oldest complete session first, else furthest along in-progress."""
-    complete = [(i, s) for i, s in enumerate(sessions) if s.status == "complete"]
-    if complete:
-        return min(complete, key=lambda x: x[1].started_at)[0]
-    return max(range(len(sessions)), key=lambda i: sessions[i].last_seq)
+def purge_stale(sessions: list) -> list:
+    """Remove sessions with no update in STALE_MINUTES."""
+    cutoff = datetime.now(timezone.utc).timestamp() - STALE_MINUTES * 60
+    active = []
+    for s in sessions:
+        last_crossing = s.crossings[s.last_seq]["crossed_at"]
+        ts = datetime.fromisoformat(last_crossing).timestamp()
+        if ts >= cutoff:
+            active.append(s)
+        else:
+            log.info("Purged stale session %s (last seen at seq=%d)", s.session_id, s.last_seq)
+    return active
 
 
 def main():
@@ -121,7 +127,7 @@ def main():
         auto_offset_reset="latest",
         group_id="session-tracker",
     )
-    log.info("Session tracker started — dir0 Gh.Sincai→Romana, %d slots", MAX_SLOTS)
+    log.info("Session tracker started — dir0 Gh.Sincai→Romana, dynamic slots")
 
     sessions: list[Session] = []
 
@@ -133,12 +139,9 @@ def main():
         if seq < START_SEQ or seq > END_SEQ:
             continue
 
+        sessions = purge_stale(sessions)
+
         if seq == START_SEQ:
-            if len(sessions) >= MAX_SLOTS:
-                idx     = evict_slot(sessions)
-                evicted = sessions.pop(idx)
-                log.info("Evicted %s (seq=%d, %s)", evicted.session_id,
-                         evicted.last_seq, evicted.status)
             sessions.append(Session(rec))
             log.info("Bus entered corridor at Gh.Sincai %s — %d active",
                      rec["crossed_at"][11:19], len(sessions))

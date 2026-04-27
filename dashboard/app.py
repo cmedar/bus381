@@ -34,7 +34,7 @@ SESSIONS_JSON   = os.path.join(DATA_DIR, "sessions.json")
 
 # stop_id → corridor seq (dir0, Sincai=1 … Romana=7)
 STOP_SEQ = {3782: 1, 3678: 2, 7257: 3, 7256: 4, 12353: 5, 12354: 6, 6588: 7}
-BUS_LABELS = "ABCDE"
+BUS_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 _HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -88,6 +88,9 @@ def fmt_elapsed(sessions: list, seq: int) -> str:
             stop   = datetime.fromisoformat(crossings[str(seq)])
             delta  = int((stop - start).total_seconds() // 60)
             parts.append(f"{label}:{delta}m")
+    # drop trailing dashes — buses that clearly haven't reached this stop
+    while parts and parts[-1].endswith(":—"):
+        parts.pop()
     return "  ".join(parts)
 
 

@@ -31,7 +31,6 @@ KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
 CROSSINGS_TOPIC = "bus-crossings"
 BUCHAREST_TZ    = timezone(timedelta(hours=3))
 DATA_DIR        = os.getenv("DATA_DIR", "/data")
-SESSIONS_JSON   = os.path.join(DATA_DIR, "sessions.json")
 JOURNEYS_CSV    = os.path.join(DATA_DIR, "journeys.csv")
 
 # stop_id → corridor seq (dir0, Sincai=1 … Romana=7)
@@ -68,21 +67,13 @@ STOPS_DIR1 = [
 ]
 
 
-def load_journeys(n: int = 10) -> list[dict]:
+def load_journeys() -> list[dict]:
     try:
         with open(JOURNEYS_CSV, newline="") as f:
-            rows = list(csv.DictReader(f))
-        return rows[-n:]
+            return list(csv.DictReader(f))
     except Exception:
         return []
 
-
-def load_sessions() -> list[dict]:
-    try:
-        with open(SESSIONS_JSON) as f:
-            return json.load(f)
-    except Exception:
-        return []
 
 
 SEQ_TO_CSV_COL = {
@@ -106,33 +97,12 @@ def _elapsed_from_journey(j: dict, seq: int) -> str:
     return f"{delta}m"
 
 
-def _elapsed_from_session(s: dict, seq: int) -> str:
-    crossings = s.get("crossings", {})
-    if str(seq) not in crossings:
-        return "—"
-    if seq == 1:
-        return "●"
-    start = datetime.fromisoformat(crossings["1"])
-    stop  = datetime.fromisoformat(crossings[str(seq)])
-    return f"{int((stop - start).total_seconds() // 60)}m"
-
-
-def fmt_elapsed(sessions: list, seq: int, journeys: list = None) -> str:
-    # completed journeys from CSV + in-progress sessions that have reached this stop
-    completed   = journeys or []
-    in_progress = [s for s in (sessions or [])
-                   if s.get("status") == "in_progress" and s.get("last_seq", 0) >= seq]
-    window      = (completed + in_progress)[-10:]
-
-    parts = []
-    for i, entry in enumerate(window):
+def fmt_elapsed(journeys: list, seq: int) -> str:
+    window = (journeys or [])[-10:]
+    parts  = []
+    for i, j in enumerate(window):
         label = BUS_LABELS[i] if i < len(BUS_LABELS) else str(i + 1)
-        if "total_seconds" in entry or SEQ_TO_CSV_COL.get(seq, "") in entry:
-            val = _elapsed_from_journey(entry, seq)
-        else:
-            val = _elapsed_from_session(entry, seq)
-        parts.append(f"{label}:{val}")
-
+        parts.append(f"{label}:{_elapsed_from_journey(j, seq)}")
     while parts and parts[-1].endswith(":—"):
         parts.pop()
     return "  ".join(parts)
@@ -202,8 +172,7 @@ def fmt(arriving_s: int) -> str:
     return f"{m}m {s:02d}s"
 
 
-def render_board(stops: list[tuple], results: dict, crossings: dict,
-                 sessions: list = None, journeys: list = None):
+def render_board(stops: list[tuple], results: dict, crossings: dict, journeys: list = None):
     for stop_id, name in stops:
         line     = results.get(stop_id)
         last_bus = crossings.get(str(stop_id), "—")
@@ -221,7 +190,7 @@ def render_board(stops: list[tuple], results: dict, crossings: dict,
             eta_line = "—"
 
         seq = STOP_SEQ.get(stop_id)
-        matrix = fmt_elapsed(sessions or [], seq, journeys) if seq else ""
+        matrix = fmt_elapsed(journeys, seq) if seq else ""
         if matrix:
             c1.write(f"{eta_line}\n\n`{matrix}`")
         else:
@@ -231,7 +200,6 @@ def render_board(stops: list[tuple], results: dict, crossings: dict,
 # ── fetch ──────────────────────────────────────────────────────────────────
 now          = datetime.now(BUCHAREST_TZ).strftime("%H:%M:%S")
 crossings    = load_last_crossings()
-sessions     = load_sessions()
 journeys     = load_journeys()
 results_dir0 = fetch_all(tuple(sid for sid, _ in STOPS_DIR0))
 results_dir1 = fetch_all(tuple(sid for sid, _ in STOPS_DIR1))
@@ -241,7 +209,7 @@ st.title("🚌 Bus 381 · Live Arrivals")
 st.markdown(f"<span style='font-size:2rem'>{now}</span>", unsafe_allow_html=True)
 
 st.subheader("→ Piata Romana")
-render_board(STOPS_DIR0, results_dir0, crossings, sessions, journeys)
+render_board(STOPS_DIR0, results_dir0, crossings, journeys)
 
 st.subheader("→ Tineretului")
 render_board(STOPS_DIR1, results_dir1, crossings)

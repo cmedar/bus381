@@ -139,18 +139,22 @@ def render_stats(stats: dict | None):
     if not stats:
         st.caption("No corridor data yet.")
         return
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("⏱ Avg (last 5)", f"{stats['avg'] // 60}m")
-    c2.metric("🏆 Best ever",    f"{stats['best'] // 60}m")
-    c3.metric("🐌 Worst ever",   f"{stats['worst'] // 60}m")
-    c4.metric("📊 Journeys",     stats["count"])
-
     tb = f"{stats['today_best'] // 60}m"  if stats["today_best"]  else "—"
     tw = f"{stats['today_worst'] // 60}m" if stats["today_worst"] else "—"
-    d1, d2, d3 = st.columns(3)
-    d1.metric("📅 Today best",  tb)
-    d2.metric("📅 Today worst", tw)
-    d3.metric("📅 Today rides", stats["today_count"])
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("⏱ Avg (last 5)",  f"{stats['avg'] // 60}m")
+    c2.metric("📅 Today best",   tb)
+    c3.metric("📅 Today worst",  tw)
+    c4.metric("📅 Today rides",  stats["today_count"])
+
+
+def render_stats_extended(stats: dict | None):
+    if not stats:
+        return
+    e1, e2, e3 = st.columns(3)
+    e1.metric("🏆 Best ever",  f"{stats['best'] // 60}m")
+    e2.metric("🐌 Worst ever", f"{stats['worst'] // 60}m")
+    e3.metric("📊 Journeys",   stats["count"])
 
 
 def load_last_crossings() -> dict[str, str]:
@@ -267,12 +271,14 @@ st.subheader(f"→ Piata Romana{avg0}")
 render_stats(stats0)
 render_board(STOPS_DIR0, results_dir0, crossings)
 with st.expander("Journey matrix (last 10 buses)"):
+    render_stats_extended(stats0)
     render_matrix(STOPS_DIR0, journeys, STOP_SEQ_DIR0, SEQ_TO_CSV_COL_DIR0, "sincai_at")
 
 st.subheader(f"→ Tineretului{avg1}")
 render_stats(stats1)
 render_board(STOPS_DIR1, results_dir1, crossings)
 with st.expander("Journey matrix (last 10 buses)"):
+    render_stats_extended(stats1)
     render_matrix(STOPS_DIR1, journeys_dir1, STOP_SEQ_DIR1, SEQ_TO_CSV_COL_DIR1, "romana_at")
 
 # ── auto-refresh ───────────────────────────────────────────────────────────

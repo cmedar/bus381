@@ -45,7 +45,6 @@ _HEADERS = {
 }
 
 STOPS_DIR0 = [
-    (3688,  "Visana"),
     (3782,  "Gh. Sincai"),
     (3678,  "Bd. Marasesti"),
     (7257,  "Piata Sf. Gheorghe"),
@@ -106,6 +105,31 @@ def fmt_elapsed(journeys: list, seq: int) -> str:
     while parts and parts[-1].endswith(":—"):
         parts.pop()
     return "  ".join(parts)
+
+
+def corridor_stats(journeys: list, n: int = 5) -> dict | None:
+    valid = [j for j in journeys if j.get("total_seconds") and int(j["total_seconds"]) >= 600]
+    if not valid:
+        return None
+    times  = [int(j["total_seconds"]) for j in valid]
+    recent = times[-n:]
+    return {
+        "avg":   sum(recent) // len(recent),
+        "best":  min(times),
+        "worst": max(times),
+        "count": len(times),
+    }
+
+
+def render_stats(stats: dict | None):
+    if not stats:
+        st.caption("No corridor data yet.")
+        return
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("⏱ Avg (last 5)", f"{stats['avg'] // 60}m")
+    c2.metric("🏆 Best",         f"{stats['best'] // 60}m")
+    c3.metric("🐌 Worst",        f"{stats['worst'] // 60}m")
+    c4.metric("📊 Journeys",     stats["count"])
 
 
 def load_last_crossings() -> dict[str, str]:
@@ -172,7 +196,7 @@ def fmt(arriving_s: int) -> str:
     return f"{m}m {s:02d}s"
 
 
-def render_board(stops: list[tuple], results: dict, crossings: dict, journeys: list = None):
+def render_board(stops: list[tuple], results: dict, crossings: dict):
     for stop_id, name in stops:
         line     = results.get(stop_id)
         last_bus = crossings.get(str(stop_id), "—")
@@ -185,16 +209,19 @@ def render_board(stops: list[tuple], results: dict, crossings: dict, journeys: l
             arriving_s = int(line.get("arrivingTime", 0))
             arrives_at = (datetime.now(BUCHAREST_TZ) + timedelta(seconds=arriving_s)).strftime("%H:%M")
             last_str   = f"🚍 {last_bus}" if last_bus != "—" else "—"
-            eta_line   = f"{dot} {fmt(arriving_s)} · 🚌 {arrives_at} · {last_str}"
+            c1.write(f"{dot} {fmt(arriving_s)} · 🚌 {arrives_at} · {last_str}")
         else:
-            eta_line = "—"
+            c1.write("—")
 
-        seq = STOP_SEQ.get(stop_id)
+
+def render_matrix(stops: list[tuple], journeys: list):
+    for stop_id, name in stops:
+        seq    = STOP_SEQ.get(stop_id)
         matrix = fmt_elapsed(journeys, seq) if seq else ""
         if matrix:
-            c1.write(f"{eta_line}\n\n`{matrix}`")
-        else:
-            c1.write(eta_line)
+            c0, c1 = st.columns([1, 3])
+            c0.caption(f"⛩️ {name}")
+            c1.caption(f"`{matrix}`")
 
 
 # ── fetch ──────────────────────────────────────────────────────────────────
@@ -205,13 +232,21 @@ results_dir0 = fetch_all(tuple(sid for sid, _ in STOPS_DIR0))
 results_dir1 = fetch_all(tuple(sid for sid, _ in STOPS_DIR1))
 
 # ── render ─────────────────────────────────────────────────────────────────
+stats0 = corridor_stats(journeys)
+avg0   = f"  ·  ~{stats0['avg'] // 60}m" if stats0 else ""
+avg1   = "  ·  no data yet"
+
 st.title("🚌 Bus 381 · Live Arrivals")
 st.markdown(f"<span style='font-size:2rem'>{now}</span>", unsafe_allow_html=True)
 
-st.subheader("→ Piata Romana")
-render_board(STOPS_DIR0, results_dir0, crossings, journeys)
+st.subheader(f"→ Piata Romana{avg0}")
+render_stats(stats0)
+render_board(STOPS_DIR0, results_dir0, crossings)
+with st.expander("Journey matrix (last 10 buses)"):
+    render_matrix(STOPS_DIR0, journeys)
 
-st.subheader("→ Tineretului")
+st.subheader(f"→ Tineretului{avg1}")
+render_stats(None)
 render_board(STOPS_DIR1, results_dir1, crossings)
 
 # ── auto-refresh ───────────────────────────────────────────────────────────

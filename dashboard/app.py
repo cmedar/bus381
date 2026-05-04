@@ -108,17 +108,23 @@ def fmt_elapsed(journeys: list, seq: int) -> str:
 
 
 def corridor_stats(journeys: list, n: int = 5) -> dict | None:
+    today = datetime.now(BUCHAREST_TZ).date().isoformat()
     valid = [j for j in journeys
              if j.get("total_seconds") and 600 <= int(j["total_seconds"]) <= 2700]
     if not valid:
         return None
-    times  = [int(j["total_seconds"]) for j in valid]
+    times       = [int(j["total_seconds"]) for j in valid]
+    today_times = [int(j["total_seconds"]) for j in valid
+                   if j.get("sincai_at", "").startswith(today)]
     recent = times[-n:]
     return {
-        "avg":   sum(recent) // len(recent),
-        "best":  min(times),
-        "worst": max(times),
-        "count": len(times),
+        "avg":         sum(recent) // len(recent),
+        "best":        min(times),
+        "worst":       max(times),
+        "count":       len(times),
+        "today_best":  min(today_times) if today_times else None,
+        "today_worst": max(today_times) if today_times else None,
+        "today_count": len(today_times),
     }
 
 
@@ -128,9 +134,16 @@ def render_stats(stats: dict | None):
         return
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("⏱ Avg (last 5)", f"{stats['avg'] // 60}m")
-    c2.metric("🏆 Best",         f"{stats['best'] // 60}m")
-    c3.metric("🐌 Worst",        f"{stats['worst'] // 60}m")
+    c2.metric("🏆 Best ever",    f"{stats['best'] // 60}m")
+    c3.metric("🐌 Worst ever",   f"{stats['worst'] // 60}m")
     c4.metric("📊 Journeys",     stats["count"])
+
+    tb = f"{stats['today_best'] // 60}m"  if stats["today_best"]  else "—"
+    tw = f"{stats['today_worst'] // 60}m" if stats["today_worst"] else "—"
+    d1, d2, d3 = st.columns(3)
+    d1.metric("📅 Today best",  tb)
+    d2.metric("📅 Today worst", tw)
+    d3.metric("📅 Today rides", stats["today_count"])
 
 
 def load_last_crossings() -> dict[str, str]:

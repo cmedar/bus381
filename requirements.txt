@@ -9,8 +9,9 @@ pydeck
 pandas
 pyarrow
 
-# Databricks (SQL queries from dashboard to Gold table)
-databricks-sql-connector
+# Data streaming notebooks (Bronze / Silver / Gold)
+jupyter
+matplotlib
 
 # AWS
 boto3

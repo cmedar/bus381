@@ -108,7 +108,8 @@ def fmt_elapsed(journeys: list, seq: int) -> str:
 
 
 def corridor_stats(journeys: list, n: int = 5) -> dict | None:
-    valid = [j for j in journeys if j.get("total_seconds") and int(j["total_seconds"]) >= 600]
+    valid = [j for j in journeys
+             if j.get("total_seconds") and 600 <= int(j["total_seconds"]) <= 2700]
     if not valid:
         return None
     times  = [int(j["total_seconds"]) for j in valid]

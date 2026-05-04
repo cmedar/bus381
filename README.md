@@ -2,8 +2,6 @@
 
 > Real-time arrival board and journey tracker for Bucharest line 381 (Tineretului ↔ Piața Română).
 
-![Dashboard snapshot](snapshot.png)
-
 ---
 
 ## What this project does

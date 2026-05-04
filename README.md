@@ -1,15 +1,32 @@
-# Bus 381 · Live Arrivals & Crossing Detector
+# Bus 381 · Live Arrivals & Corridor Tracker
 
-> Real-time arrival board and bus crossing tracker for Bucharest line 381 (Tineretului ↔ Piața Română).
+> Real-time arrival board and journey tracker for Bucharest line 381 (Tineretului ↔ Piața Română).
+
+![Dashboard snapshot](snapshot.png)
 
 ---
 
 ## What this project does
 
-- **Live departure board** — shows the next bus ETA at every monitored stop, both directions, updated every 90s. Distinguishes GPS-tracked buses from schedule fallback.
-- **Crossing detection** — detects when a bus passes each stop by watching for ETA resets and records the estimated arrival time.
-- **CSV history** — every ETA reading and every detected crossing is appended to CSV files on the host for later analysis.
-- **Kafka backbone** — decouples the poller, crossing detector, and dashboard; enables future replay and stream processing.
+- **Live departure board** — next bus ETA at every monitored stop, both directions, updated every 10s. Distinguishes GPS-tracked buses from schedule fallback.
+- **Crossing detection** — detects when a bus passes each stop by watching for ETA resets; records estimated arrival time.
+- **Journey sessionization** — groups per-stop crossings into complete bus journeys (Gh. Sincai → Piața Română), reconstructing how long each bus took at each segment.
+- **Corridor stats** — avg / best / worst corridor time based on last 5 completed journeys, shown live in the dashboard.
+- **Kafka backbone** — decouples poller, crossing detector, session tracker, and dashboard.
+
+---
+
+## Dashboard
+
+![Dashboard snapshot](snapshot.png)
+
+Each direction section shows:
+
+- **Corridor summary** — avg (last 5 buses), best, worst, total journeys tracked
+- **Stop rows** — ETA countdown · absolute arrival time · last bus time · 🟢 live GPS / 🔘 schedule
+- **Journey matrix** (collapsed) — last 10 completed buses A–J, elapsed time from Gh. Sincai at each stop
+
+Refreshes every 10 seconds. API calls are cached 45s so the refresh is free.
 
 ---
 
@@ -17,14 +34,18 @@
 
 ### Stop-as-sensor pattern
 
-There is no direct vehicle tracking. Instead, each stop acts as a sensor:
+There is no direct vehicle tracking. Each stop acts as a sensor:
 
-- The poller asks each stop *"how long until the next 381 arrives?"* every 90 seconds.
-- When a stop's ETA drops to near zero, then jumps back up on the next poll, a bus just passed.
-- The crossing detector watches for ETA jumps > 60 seconds and fires a crossing event.
-- Estimated arrival time = `crossed_at − eta_before` (when we detected the reset, minus how many seconds the bus was away on the last reading).
+1. The poller asks each stop *"how long until the next 381 arrives?"* every 45 seconds.
+2. When a stop's ETA drops to near zero then jumps back up, a bus just passed.
+3. The crossing detector fires when ETA jumps > 60 seconds, publishing a `bus-crossings` event.
+4. Estimated arrival time = `crossed_at − eta_before`.
 
-Accuracy is ±poll interval (±90s worst case). Shorter intervals give tighter estimates.
+**Adaptive fast-polling:** when ETA at Gh. Sincai drops below 60s, the poller switches to 20s intervals (10s when ETA = 0) until the bus resets to ≥ 120s. This tightens crossing detection at the corridor entry point.
+
+### FIFO sessionization
+
+The session tracker assigns each crossing to the oldest in-progress bus at the previous stop (FIFO). A plausibility guard rejects assignments where the gap since the last crossing exceeds 15 minutes, preventing mismatch errors when multiple buses are close together.
 
 ### Data flow
 
@@ -33,19 +54,20 @@ mo-bi.ro API
      │
      ▼
   poller.py  ──────────────────────────────────► arrivals.csv
-     │
-     ▼  (stb-arrivals topic)
+     │  (stb-arrivals topic)
+     ▼
   Kafka
      │
      ├──► crossing_detector.py ──────────────► crossings.csv
-     │         │
-     │         ▼  (bus-crossings topic)
+     │         │  (bus-crossings topic)
+     │         ▼
      │       Kafka
      │         │
-     └─────────┴──► dashboard/app.py
+     ├─────────┴──► dashboard/app.py
+     │
+     └──► session_tracker.py ──────────────► sessions.json
+                                          ► journeys.csv
 ```
-
-The dashboard fetches ETAs directly from the API in parallel (for responsiveness) and reads the `bus-crossings` Kafka topic for last arrival times.
 
 ---
 
@@ -54,10 +76,10 @@ The dashboard fetches ETAs directly from the API in parallel (for responsiveness
 | Layer | Technology |
 |---|---|
 | API source | mo-bi.ro `nextArrivals` endpoint |
-| Proxy | Cloudflare Worker (EC2 IPs are blocked by mo-bi.ro) |
+| Proxy | Cloudflare Worker (EC2 IPs blocked by mo-bi.ro) |
 | Ingestion | Python · `requests` · `kafka-python` |
 | Message bus | Apache Kafka (KRaft mode, no Zookeeper) |
-| Persistence | CSV files on EC2 host (host-mounted Docker volume) |
+| Persistence | CSV + JSON on EC2 host (host-mounted Docker volume) |
 | Dashboard | Streamlit |
 | Infrastructure | AWS EC2 t2.small · Docker Compose |
 
@@ -69,7 +91,6 @@ The dashboard fetches ETAs directly from the API in parallel (for responsiveness
 
 | seq | Stop | Stop ID |
 |---|---|---|
-| 0 | Visana | 3688 |
 | 1 | Gh. Sincai | 3782 |
 | 2 | Bd. Marasesti | 3678 |
 | 3 | Piata Sf. Gheorghe | 7257 |
@@ -93,22 +114,7 @@ The dashboard fetches ETAs directly from the API in parallel (for responsiveness
 
 ---
 
-## Dashboard
-
-Two stacked tables (one per direction) with columns:
-
-| Column | Description |
-|---|---|
-| 🟢/🔘 Stop | Stop name · green = GPS live, grey = schedule fallback |
-| ETA | Time until next bus (mm ss) |
-| Arrives at | Current time + ETA (absolute clock time) |
-| Last bus | Estimated time the previous bus passed this stop |
-
-Refreshes every 90 seconds.
-
----
-
-## CSV files
+## Data files
 
 Written to `/home/bus381/data/` on the EC2 host, mounted into containers at `/data/`.
 
@@ -122,6 +128,17 @@ ingested_at, stop_id, stop_name, direction, corridor_seq, arriving_in_seconds, i
 crossed_at, stop_id, stop_name, direction, corridor_seq, eta_before, eta_after
 ```
 
+**`journeys.csv`** — one row per complete Gh. Sincai → Piața Română journey:
+```
+session_id,
+sincai_at, sincai_eta_before, sincai_eta_after,
+marasesti_at, marasesti_eta_before, marasesti_eta_after,
+sf_gheorghe_at, ..., romana_at, ...,
+total_seconds
+```
+
+**`sessions.json`** — in-progress session state snapshot (written after every crossing event).
+
 ---
 
 ## Project structure
@@ -129,12 +146,13 @@ crossed_at, stop_id, stop_name, direction, corridor_seq, eta_before, eta_after
 ```
 bus381/
 ├── ingestion/
-│   ├── config.py               # stop IDs, Kafka topics, poll interval
-│   ├── poller.py               # polls all stops, publishes to Kafka + arrivals.csv
-│   └── crossing_detector.py    # detects crossings, publishes to Kafka + crossings.csv
+│   ├── config.py               # stop IDs, Kafka topics, poll intervals
+│   ├── poller.py               # polls all stops, adaptive fast-poll at Gh. Sincai
+│   ├── crossing_detector.py    # detects crossings via ETA reset, publishes bus-crossings
+│   └── session_tracker.py      # sessionizes crossings into journeys, writes journeys.csv
 ├── dashboard/
-│   └── app.py                  # Streamlit live departure board
-├── docker-compose.yml          # Kafka + poller + crossing-detector + dashboard
+│   └── app.py                  # Streamlit live board + corridor stats
+├── docker-compose.yml          # Kafka + poller + detector + session-tracker + dashboard
 └── Dockerfile
 ```
 
@@ -142,42 +160,37 @@ bus381/
 
 ## Deployment
 
-The project runs on EC2 via Docker Compose. GitHub Actions deploys on push to `main`.
+Runs on EC2 via Docker Compose. GitHub Actions deploys on every push to `main`.
 
 ```bash
-# on EC2 — manual deploy
-docker compose pull
+# manual deploy on EC2
 docker compose up -d --build
 ```
 
-The data directory is created automatically on first run:
+Data directory created automatically on first run:
 ```
 /home/bus381/data/
 ├── arrivals.csv
-└── crossings.csv
+├── crossings.csv
+├── journeys.csv
+└── sessions.json
 ```
 
 ---
 
 ## Roadmap
 
-### Phase 1 — Live ingestion ✅ (current)
-- Poll mo-bi.ro API every 90s for all corridor stops, both directions
-- Publish ETA readings to Kafka (`stb-arrivals`)
-- Detect bus crossings via ETA reset pattern, publish to Kafka (`bus-crossings`)
-- Live dashboard: ETA, arrival time, last bus per stop
-- Persist all readings and crossings to CSV
+### Done ✅
+- Poll mo-bi.ro every 45s, both directions, adaptive fast-poll at Gh. Sincai
+- Crossing detection via ETA reset pattern (±45s accuracy)
+- FIFO sessionization with 15-min plausibility guard
+- Corridor stats: avg / best / worst in dashboard
+- Journey matrix: last 10 completed buses with per-stop elapsed times
 
-### Phase 2 — Historical analysis (next)
-- Load `arrivals.csv` and `crossings.csv` into Databricks
-- Build Silver table: clean crossing events with travel times between stops
-- Build Gold table: average journey time per stop pair, per hour, per day of week
-- Identify peak congestion windows and structural delays
-
-### Phase 3 — Baseline ETA (future)
-- Feed historical baseline back into dashboard
-- Show predicted arrival with confidence interval based on accumulated data
-- Self-improving: the more data collected, the tighter the interval
+### Next
+- Dir1 sessionization (Piața Română → Gh. Sincai)
+- ETA accuracy analysis: compare `eta_before` to actual segment times
+- Per-stop historical benchmarks in dashboard (avg segment time alongside live reading)
 
 ---
 

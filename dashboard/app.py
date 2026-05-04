@@ -31,11 +31,14 @@ KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
 CROSSINGS_TOPIC = "bus-crossings"
 BUCHAREST_TZ    = timezone(timedelta(hours=3))
 DATA_DIR        = os.getenv("DATA_DIR", "/data")
-JOURNEYS_CSV    = os.path.join(DATA_DIR, "journeys.csv")
+JOURNEYS_CSV      = os.path.join(DATA_DIR, "journeys.csv")
+JOURNEYS_DIR1_CSV = os.path.join(DATA_DIR, "journeys_dir1.csv")
 
-# stop_id → corridor seq (dir0, Sincai=1 … Romana=7)
-STOP_SEQ = {3782: 1, 3678: 2, 7257: 3, 7256: 4, 12353: 5, 12354: 6, 6588: 7}
-BUS_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+# stop_id → corridor seq
+STOP_SEQ_DIR0 = {3782: 1, 3678: 2, 7257: 3, 7256: 4, 12353: 5, 12354: 6, 6588: 7}
+STOP_SEQ_DIR1 = {3826: 1, 12514: 2, 7411: 3, 7462: 4, 6611: 5, 3667: 6, 3784: 7}
+STOP_SEQ      = STOP_SEQ_DIR0  # kept for crossings lookup (dir0 only)
+BUS_LABELS    = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 _HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -66,42 +69,46 @@ STOPS_DIR1 = [
 ]
 
 
-def load_journeys() -> list[dict]:
+def load_journeys(path: str = JOURNEYS_CSV) -> list[dict]:
     try:
-        with open(JOURNEYS_CSV, newline="") as f:
+        with open(path, newline="") as f:
             return list(csv.DictReader(f))
     except Exception:
         return []
 
 
-
-SEQ_TO_CSV_COL = {
+SEQ_TO_CSV_COL_DIR0 = {
     1: "sincai_at", 2: "marasesti_at", 3: "sf_gheorghe_at",
     4: "universitate_at", 5: "nicolae_balcescu_at",
     6: "arthur_verona_at", 7: "romana_at",
 }
+SEQ_TO_CSV_COL_DIR1 = {
+    1: "romana_at", 2: "enescu_at", 3: "balcescu_at",
+    4: "piata21_at", 5: "sf_gheorghe_at", 6: "marasesti_at", 7: "sincai_at",
+}
+SEQ_TO_CSV_COL = SEQ_TO_CSV_COL_DIR0  # default, kept for compatibility
 
 
-def _elapsed_from_journey(j: dict, seq: int) -> str:
-    if seq == 7:
+def _elapsed_from_journey(j: dict, seq: int, seq_to_col: dict, start_col: str) -> str:
+    if seq == max(seq_to_col):
         total_s = j.get("total_seconds", "")
         return f"{int(total_s)//60}m" if total_s else "—"
-    sincai = j.get("sincai_at", "")
-    stop   = j.get(SEQ_TO_CSV_COL.get(seq, ""), "")
-    if not sincai or not stop:
+    start = j.get(start_col, "")
+    stop  = j.get(seq_to_col.get(seq, ""), "")
+    if not start or not stop:
         return "—"
     if seq == 1:
         return "●"
-    delta = int((datetime.fromisoformat(stop) - datetime.fromisoformat(sincai)).total_seconds() // 60)
+    delta = int((datetime.fromisoformat(stop) - datetime.fromisoformat(start)).total_seconds() // 60)
     return f"{delta}m"
 
 
-def fmt_elapsed(journeys: list, seq: int) -> str:
+def fmt_elapsed(journeys: list, seq: int, seq_to_col: dict, start_col: str) -> str:
     window = (journeys or [])[-10:]
     parts  = []
     for i, j in enumerate(window):
         label = BUS_LABELS[i] if i < len(BUS_LABELS) else str(i + 1)
-        parts.append(f"{label}:{_elapsed_from_journey(j, seq)}")
+        parts.append(f"{label}:{_elapsed_from_journey(j, seq, seq_to_col, start_col)}")
     while parts and parts[-1].endswith(":—"):
         parts.pop()
     return "  ".join(parts)
@@ -228,10 +235,11 @@ def render_board(stops: list[tuple], results: dict, crossings: dict):
             c1.write("—")
 
 
-def render_matrix(stops: list[tuple], journeys: list):
+def render_matrix(stops: list[tuple], journeys: list, stop_seq: dict,
+                  seq_to_col: dict, start_col: str):
     for stop_id, name in stops:
-        seq    = STOP_SEQ.get(stop_id)
-        matrix = fmt_elapsed(journeys, seq) if seq else ""
+        seq    = stop_seq.get(stop_id)
+        matrix = fmt_elapsed(journeys, seq, seq_to_col, start_col) if seq else ""
         if matrix:
             c0, c1 = st.columns([1, 3])
             c0.caption(f"⛩️ {name}")
@@ -239,16 +247,18 @@ def render_matrix(stops: list[tuple], journeys: list):
 
 
 # ── fetch ──────────────────────────────────────────────────────────────────
-now          = datetime.now(BUCHAREST_TZ).strftime("%H:%M:%S")
-crossings    = load_last_crossings()
-journeys     = load_journeys()
-results_dir0 = fetch_all(tuple(sid for sid, _ in STOPS_DIR0))
-results_dir1 = fetch_all(tuple(sid for sid, _ in STOPS_DIR1))
+now           = datetime.now(BUCHAREST_TZ).strftime("%H:%M:%S")
+crossings     = load_last_crossings()
+journeys      = load_journeys()
+journeys_dir1 = load_journeys(JOURNEYS_DIR1_CSV)
+results_dir0  = fetch_all(tuple(sid for sid, _ in STOPS_DIR0))
+results_dir1  = fetch_all(tuple(sid for sid, _ in STOPS_DIR1))
 
 # ── render ─────────────────────────────────────────────────────────────────
 stats0 = corridor_stats(journeys)
+stats1 = corridor_stats(journeys_dir1)
 avg0   = f"  ·  ~{stats0['avg'] // 60}m" if stats0 else ""
-avg1   = "  ·  no data yet"
+avg1   = f"  ·  ~{stats1['avg'] // 60}m" if stats1 else "  ·  no data yet"
 
 st.title("🚌 Bus 381 · Live Arrivals")
 st.markdown(f"<span style='font-size:2rem'>{now}</span>", unsafe_allow_html=True)
@@ -257,11 +267,13 @@ st.subheader(f"→ Piata Romana{avg0}")
 render_stats(stats0)
 render_board(STOPS_DIR0, results_dir0, crossings)
 with st.expander("Journey matrix (last 10 buses)"):
-    render_matrix(STOPS_DIR0, journeys)
+    render_matrix(STOPS_DIR0, journeys, STOP_SEQ_DIR0, SEQ_TO_CSV_COL_DIR0, "sincai_at")
 
 st.subheader(f"→ Tineretului{avg1}")
-render_stats(None)
+render_stats(stats1)
 render_board(STOPS_DIR1, results_dir1, crossings)
+with st.expander("Journey matrix (last 10 buses)"):
+    render_matrix(STOPS_DIR1, journeys_dir1, STOP_SEQ_DIR1, SEQ_TO_CSV_COL_DIR1, "romana_at")
 
 # ── auto-refresh ───────────────────────────────────────────────────────────
 time.sleep(REFRESH_S)
